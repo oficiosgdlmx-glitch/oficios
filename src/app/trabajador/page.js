@@ -1,0 +1,279 @@
+'use client'
+import { useState, useEffect } from 'react'
+import { Wrench, MapPin, CheckCircle, Clock, AlertCircle, Navigation, Upload, DollarSign, Calendar, MessageCircle, ArrowLeft, Radio } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import BottomNav from '../../components/BottomNav'
+import { supabase } from '../../lib/supabase'
+
+export default function TrabajadorPage() {
+  const router = useRouter()
+  const [pestanaActiva, setPestanaActiva] = useState('inicio')
+  const [jobs, setJobs] = useState([])
+  const [trabajoActivo, setTrabajoActivo] = useState(null)
+  const [cargando, setCargando] = useState(true)
+
+  const [contraofertaMonto, setContraofertaMonto] = useState('')
+  const [fechaAgendada, setFechaAgendada] = useState('')
+  const [fotoTerminado, setFotoTerminado] = useState(null)
+
+  const obtenerJobs = async () => {
+    try {
+      setCargando(true)
+      const { data } = await supabase.from('jobs').select('*').order('id', { ascending: false })
+      if (data) {
+        setJobs(data)
+        const activo = data.find(t => t.estado === 'aceptado' || t.estado === 'en_camino' || t.estado === 'programado')
+        if (activo) setTrabajoActivo(activo)
+      }
+    } catch (err) {
+      console.error('Error:', err)
+    } finally {
+      setCargando(false)
+    }
+  }
+
+  useEffect(() => {
+    obtenerJobs()
+  }, [])
+
+  const aceptarInmediato = async (id) => {
+    try {
+      const { error } = await supabase.from('jobs').update({ estado: 'en_camino' }).eq('id', id)
+      if (error) alert('Error al aceptar.')
+      else {
+        alert('¡Trabajo aceptado! Se ha notificado al cliente que vas en camino.')
+        await obtenerJobs()
+        setPestanaActiva('actividad')
+      }
+    } catch (err) { console.error(err) }
+  }
+
+  const programarCita = async (id) => {
+    if (!fechaAgendada) {
+      alert('Selecciona una fecha y hora para agendar.')
+      return
+    }
+    try {
+      const { error } = await supabase.from('jobs').update({ 
+        estado: 'programado', 
+        tipo_servicio: 'programado',
+        fecha_cita: fechaAgendada 
+      }).eq('id', id)
+      if (error) alert('Error al agendar.')
+      else {
+        alert('¡Cita programada con éxito!')
+        await obtenerJobs()
+        setPestanaActiva('actividad')
+      }
+    } catch (err) { console.error(err) }
+  }
+
+  const enviarContraoferta = async (id) => {
+    if (!contraofertaMonto) return
+    try {
+      await supabase.from('jobs').update({ 
+        contraoferta: parseFloat(contraofertaMonto),
+        presupuesto_estado: 'contraoferta_enviada'
+      }).eq('id', id)
+      alert('¡Contraoferta enviada al cliente!')
+      setContraofertaMonto('')
+      await obtenerJobs()
+    } catch (err) { console.error(err) }
+  }
+
+  const finalizarTrabajo = async (id) => {
+    alert('¡Excelente trabajo! Evidencia guardada y calificación solicitada.')
+    try {
+      await supabase.from('jobs').update({ 
+        estado: 'finalizado',
+        foto_antes_despues: fotoTerminado ? fotoTerminado.name : 'evidencia.jpg'
+      }).eq('id', id)
+      setTrabajoActivo(null)
+      setFotoTerminado(null)
+      await obtenerJobs()
+      setPestanaActiva('inicio')
+    } catch (err) { console.error(err) }
+  }
+
+  const cancelarPorDemora = async (id) => {
+    const confirmacion = confirm('¿Cancelar por demora o imprevisto? Nota: Si no te presentas o cancelas sin causa, tu cuenta recibirá una suspensión temporal.')
+    if (confirmacion) {
+      try {
+        await supabase.from('jobs').update({ estado: 'pendiente', trabajador_id: null }).eq('id', id)
+        setTrabajoActivo(null)
+        await obtenerJobs()
+        setPestanaActiva('inicio')
+      } catch (err) { console.error(err) }
+    }
+  }
+
+  return (
+    <div className="h-full bg-gray-900 min-h-screen pb-24 text-white">
+      {/* Header con Botón de Regresar y el nombre Mi Oficio */}
+      <div className="bg-gray-800 p-3 px-4 shadow-md flex items-center justify-between border-b border-gray-700">
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => router.push('/')}
+            className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-xl transition cursor-pointer"
+            title="Volver al inicio"
+          >
+            <ArrowLeft size={16} />
+          </button>
+          <span className="text-xs font-bold text-green-400 tracking-wide uppercase">Mi Oficio</span>
+        </div>
+        <div className="flex gap-2 text-xs font-bold">
+          <button onClick={() => setPestanaActiva('inicio')} className={`pb-1 px-2 border-b-2 transition cursor-pointer ${pestanaActiva === 'inicio' ? 'border-green-400 text-green-400' : 'border-transparent text-gray-400'}`}>
+            Bolsa
+          </button>
+          <button onClick={() => setPestanaActiva('actividad')} className={`pb-1 px-2 border-b-2 transition cursor-pointer ${pestanaActiva === 'actividad' ? 'border-green-400 text-green-400' : 'border-transparent text-gray-400'}`}>
+            Curso
+          </button>
+          <button onClick={() => setPestanaActiva('perfil')} className={`pb-1 px-2 border-b-2 transition cursor-pointer ${pestanaActiva === 'perfil' ? 'border-green-400 text-green-400' : 'border-transparent text-gray-400'}`}>
+            Perfil
+          </button>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-6">
+        {pestanaActiva === 'inicio' && (
+          <div className="space-y-4">
+            {/* Indicador Visual Discreto de Actividad en Vivo */}
+            <div className="bg-gray-800/80 border border-gray-700 p-3.5 rounded-2xl flex items-center justify-between shadow-inner">
+              <div className="flex items-center space-x-3">
+                <div className="relative w-8 h-8 bg-green-500/10 text-green-400 rounded-full flex items-center justify-center border border-green-500/30">
+                  <Radio size={16} />
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full animate-ping"></span>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white">Red Activa en tu Zona</p>
+                  <p className="text-[10px] text-gray-400">Buscando solicitudes y clientes cercanos</p>
+                </div>
+              </div>
+              <span className="text-[10px] bg-green-950 text-green-400 border border-green-800/50 px-2.5 py-1 rounded-full font-bold">
+                En Línea
+              </span>
+            </div>
+
+            <div>
+              <h3 className="font-bold text-gray-200 mb-3 text-sm">Solicitudes Disponibles</h3>
+              {cargando ? (
+                <p className="text-xs text-gray-400 text-center py-6">Sincronizando...</p>
+              ) : jobs.length > 0 ? (
+                <div className="space-y-3">
+                  {jobs.map((job, index) => (
+                    <div key={index} className="bg-gray-800 border border-gray-700 p-4 rounded-xl shadow-sm flex flex-col space-y-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-xs bg-blue-900 text-blue-300 px-2 py-0.5 rounded font-medium">{job.categoria}</span>
+                          <h4 className="font-bold text-sm text-white mt-1">{job.titulo}</h4>
+                        </div>
+                        <span className="text-xs text-green-400 font-bold">{job.presupuesto ? `$${job.presupuesto} MXN` : 'A tratar'}</span>
+                      </div>
+                      <p className="text-xs text-gray-400">{job.descripcion}</p>
+                      
+                      <div className="flex flex-col gap-2 pt-2 border-t border-gray-700/50 text-xs">
+                        <span className="flex items-center gap-1 text-gray-400"><MapPin size={14} /> {job.ubicacion}</span>
+                        
+                        {job.estado === 'pendiente' && (
+                          <div className="space-y-2 mt-2">
+                            <div className="flex gap-2">
+                              <button onClick={() => aceptarInmediato(job.id)} className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg transition cursor-pointer">
+                                🚗 Aceptar e Ir en Camino
+                              </button>
+                            </div>
+                            <div className="flex gap-2 items-center bg-gray-900 p-2 rounded-lg border border-gray-700">
+                              <input type="datetime-local" value={fechaAgendada} onChange={(e) => setFechaAgendada(e.target.value)} className="bg-gray-800 text-xs text-white p-1.5 rounded border border-gray-600 flex-1" />
+                              <button onClick={() => programarCita(job.id)} className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 py-2 rounded-lg transition cursor-pointer text-xs">
+                                Agendar
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 text-center py-6">No hay solicitudes activas en este momento.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {pestanaActiva === 'actividad' && (
+          <div className="space-y-4">
+            <h2 className="font-bold text-lg mb-4 text-white">Trabajo en Curso / Agendado</h2>
+            {trabajoActivo ? (
+              <div className="bg-gray-800 p-5 rounded-xl shadow-sm border-l-4 border-green-500 space-y-4">
+                <div>
+                  <span className="text-[10px] bg-blue-900 text-blue-300 px-2 py-0.5 rounded font-medium uppercase">Estatus: {trabajoActivo.estado}</span>
+                  <h4 className="font-bold text-base text-white mt-1">{trabajoActivo.titulo}</h4>
+                  <p className="text-xs text-gray-400 mt-2">{trabajoActivo.descripcion}</p>
+                  <p className="text-xs text-green-400 font-bold mt-2"><MapPin size={14} className="inline mr-1" /> {trabajoActivo.ubicacion}</p>
+                  {trabajoActivo.fecha_cita && <p className="text-xs text-yellow-400 mt-1">📅 Cita programada: {new Date(trabajoActivo.fecha_cita).toLocaleString()}</p>}
+                </div>
+
+                <a href="https://wa.me/" target="_blank" rel="noopener noreferrer" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg text-xs transition flex items-center justify-center gap-1.5 cursor-pointer">
+                  <MessageCircle size={16} /> Contactar con Cliente
+                </a>
+
+                <div className="bg-gray-900 p-3 rounded-xl border border-gray-700 space-y-2">
+                  <label className="text-xs font-bold text-gray-300 flex items-center gap-1"><DollarSign size={14} className="text-green-400" /> Contraoferta por material extra</label>
+                  <div className="flex gap-2">
+                    <input type="number" value={contraofertaMonto} onChange={(e) => setContraofertaMonto(e.target.value)} placeholder="Nuevo monto MXN" className="w-full p-2 bg-gray-800 border border-gray-600 rounded-lg text-xs text-white focus:outline-none" />
+                    <button onClick={() => enviarContraoferta(trabajoActivo.id)} className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-3 py-2 rounded-lg text-xs cursor-pointer">Enviar</button>
+                  </div>
+                </div>
+
+                <div className="bg-gray-900 p-3 rounded-xl border border-gray-700 space-y-2">
+                  <label className="text-xs font-bold text-gray-300 flex items-center gap-1"><Upload size={14} className="text-green-400" /> Evidencia "Antes y Después"</label>
+                  <input type="file" onChange={(e) => setFotoTerminado(e.target.files[0])} className="w-full text-xs text-gray-400 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:bg-gray-700 file:text-white" />
+                </div>
+                
+                <button onClick={() => finalizarTrabajo(trabajoActivo.id)} className="w-full bg-green-600 text-white font-bold py-3 rounded-lg shadow-md hover:bg-green-500 transition text-sm flex items-center justify-center gap-2 cursor-pointer">
+                  ✅ Marcar como Terminado
+                </button>
+                
+                <button onClick={() => cancelarPorDemora(trabajoActivo.id)} className="w-full bg-transparent text-red-400 font-bold py-2 rounded-lg text-xs hover:bg-red-950/30 transition border border-red-900/50 cursor-pointer">
+                  ❌ Cancelar / Reportar Imprevisto
+                </button>
+              </div>
+            ) : (
+              <div className="text-center py-12 bg-gray-800 rounded-2xl border border-gray-700 p-6">
+                <span className="text-4xl block mb-3">📋</span>
+                <p className="text-gray-300 text-sm font-medium">No tienes trabajos activos.</p>
+                <button onClick={() => setPestanaActiva('inicio')} className="mt-4 bg-gray-700 text-green-400 font-bold py-2 px-6 rounded-lg text-xs border border-gray-600 hover:bg-gray-600 transition cursor-pointer">
+                  Ver Bolsa de Servicios
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {pestanaActiva === 'perfil' && (
+          <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 space-y-4">
+            <h2 className="font-bold text-lg text-white">Mi Perfil Profesional</h2>
+            <div className="flex items-center space-x-4">
+              <div className="w-16 h-16 bg-green-900/40 text-green-400 rounded-full flex items-center justify-center text-3xl border border-green-700">👨🏽‍🔧</div>
+              <div>
+                <p className="text-sm font-bold text-white">Moy Hernández</p>
+                <p className="text-xs text-gray-400">Especialista Verificado</p>
+                <p className="text-xs text-yellow-400 mt-1">⭐ 5.0 (Calificación)</p>
+              </div>
+            </div>
+
+            <div className="bg-gray-900 p-4 rounded-xl border border-gray-700 space-y-2">
+              <p className="text-xs font-bold text-blue-400">🚨 Centro de Soporte</p>
+              <p className="text-xs text-gray-300">¿Dudas o casos por resolver?</p>
+              <a href="https://wa.me/" target="_blank" rel="noopener noreferrer" className="block text-center w-full mt-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2.5 rounded-lg shadow cursor-pointer">
+                Contactar Soporte
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <BottomNav role="trabajador" />
+    </div>
+  )
+}
