@@ -15,3 +15,10 @@ export const viewport = {
   themeColor: '#030712',
 }
 
+export default function RootLayout({ children }) {
+  return (
+    <html lang="es">
+      <body>{children}</body>
+    </html>
+  )
+}
